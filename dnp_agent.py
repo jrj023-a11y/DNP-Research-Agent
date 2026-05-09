@@ -3,7 +3,7 @@ import datetime
 from Bio import Entrez
 from google import genai
 
-Entrez.email = "your.email@example.com" 
+Entrez.email = "jrj023@gmail.com" 
 GEMINI_KEY = os.environ.get("GEMINI_API_KEY")
 
 def fetch_dnp_research():
