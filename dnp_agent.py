@@ -49,7 +49,7 @@ def generate_dnp_synthesis(text):
     Abstracts:
     {text}
     """
-    response = client.models.generate_content(model="gemini-1.5-flash", contents=prompt)
+    response = client.models.generate_content(model="gemini-2.0-flash", contents=prompt)
     return response.text
 
 if __name__ == "__main__":
