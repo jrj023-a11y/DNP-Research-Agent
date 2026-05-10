@@ -56,3 +56,27 @@ if __name__ == "__main__":
     data = fetch_dnp_research()
     report = generate_dnp_synthesis(data)
     print(report)
+    import smtplib
+import os
+from email.message import EmailMessage
+
+def send_dnp_summary(report_content):
+    msg = EmailMessage()
+    msg.set_content(report_content)
+    
+    # Custom subject for your DNP studies
+    msg['Subject'] = "DNP Research Agent: Weekly Literature Update"
+    msg['From'] = f"DNP Agent <{os.environ.get('MAIL_USERNAME')}>"
+    msg['To'] = os.environ.get('MAIL_USERNAME')
+
+    try:
+        with smtplib.SMTP_SSL('smtp.gmail.com', 465) as smtp:
+            smtp.login(os.environ.get('MAIL_USERNAME'), os.environ.get('MAIL_PASSWORD'))
+            smtp.send_message(msg)
+        print("DNP Research Email sent successfully!")
+    except Exception as e:
+        print(f"Email failed: {e}")
+
+# Trigger the email at the end of the script
+# Replace 'final_output' with the actual variable name used in your script
+send_dnp_summary(final_output)
