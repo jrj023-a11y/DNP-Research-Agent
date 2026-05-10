@@ -79,4 +79,4 @@ def send_dnp_summary(report_content):
 
 # Trigger the email at the end of the script
 # Replace 'final_output' with the actual variable name used in your script
-send_dnp_summary(final_output)
+send_dnp_summary(report)
