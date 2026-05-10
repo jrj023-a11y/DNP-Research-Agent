@@ -1,95 +1,116 @@
 import os
+import time
 import datetime
 from Bio import Entrez
 from google import genai
 from google.genai import types
-import smtplib
 from email.message import EmailMessage
+import smtplib
 
+# --- CONFIGURATION ---
 Entrez.email = "jrj023@gmail.com"
 GEMINI_KEY = os.environ.get("GEMINI_API_KEY")
+MY_EMAIL = os.environ.get("MAIL_USERNAME")
+EMAIL_PASS = os.environ.get("MAIL_PASSWORD")
 
-def fetch_dnp_research():
+def fetch_pubmed_valves():
+    """Directly queries PubMed for the last 7 days of valve research."""
     today = datetime.date.today()
-    last_month = today - datetime.timedelta(days=30)
-    date_range = f"{last_month.strftime('%Y/%m/%d')}:{today.strftime('%Y/%m/%d')}"
+    past_week = today - datetime.timedelta(days=7)
+    date_range = f"{past_week.strftime('%Y/%m/%d')}:{today.strftime('%Y/%m/%d')}"
     
-    # Targeting your DNP topic: KCCQ & Aortic Stenosis Surveillance
-    search_query = (f"(('Aortic Stenosis'[Title/Abstract]) AND ('Asymptomatic'[Title/Abstract])) OR "
-                    f"('KCCQ'[Title/Abstract]) OR ('Quality of Life'[Title/Abstract] AND 'TAVR'[Title/Abstract]) OR "
-                    f"('Pro-BNP'[Title/Abstract] AND 'Aortic Stenosis'[Title/Abstract]) "
-                    f"AND ({date_range}[Date - Publication])")
+    # Precise query for your clinical focus
+    search_query = (f"(TAVR[Title/Abstract] OR SAVR[Title/Abstract] OR 'Mitral Valve'[Title/Abstract] OR "
+                    f"'Tricuspid Valve'[Title/Abstract]) AND ({date_range}[Date - Publication])")
     
-    handle = Entrez.esearch(db="pubmed", term=search_query, retmax=5)
-    record = Entrez.read(handle)
-    ids = record["IdList"]
-    handle.close()
-    
-    if not ids:
-        return None
+    try:
+        handle = Entrez.esearch(db="pubmed", term=search_query, retmax=10)
+        record = Entrez.read(handle)
+        ids = record["IdList"]
+        handle.close()
         
-    handle = Entrez.efetch(db="pubmed", id=",".join(ids), rettype="abstract", retmode="text")
-    abstract_data = handle.read()
-    handle.close()
-    return abstract_data
+        if not ids:
+            return ""
+            
+        handle = Entrez.efetch(db="pubmed", id=",".join(ids), rettype="abstract", retmode="text")
+        abstracts = handle.read()
+        handle.close()
+        return abstracts
+    except Exception as e:
+        print(f"PubMed retrieval error: {e}")
+        return ""
 
-def generate_dnp_synthesis(text):
-    if not text:
-        return "No new specific DNP-related studies found this month."
-        
+def generate_valve_summary(pubmed_data):
+    """Combines PubMed abstracts with a live Google Search for a full synthesis."""
     client = genai.Client(api_key=GEMINI_KEY)
     
-    prompt = f"""
-    You are a Doctoral Nursing Research Assistant. Analyze these abstracts for a DNP Project 
-    focused on Aortic Stenosis Surveillance and Patient Outcomes (KCCQ).
+    # Prompt instructs Gemini to use the provided data AND its search tool
+    search_query = f"""
+    You are a Cardiac Surgery Research Assistant. 
     
-    IMPORTANT: Provide the response in HTML format. For every study mentioned, 
-    you MUST provide the title as an HTML hyperlink using its DOI or PubMed URL. 
-    Example: <a href="https://pubmed.ncbi.nlm.nih.gov/ID">Study Title</a>
+    1. Review these provided PubMed abstracts: 
+    {pubmed_data}
     
-    Categorize into:
-    1. Evidence for Surveillance
-    2. Patient-Reported Outcomes (KCCQ focus)
-    3. Clinical Practice Gap
-    4. DNP Project Synthesis (One paragraph)
+    2. Use your search tool to find any OTHER major news or trials from the last 7 days 
+    in JACC, NEJM, Circulation, and The Lancet regarding TAVR/SAVR and Mitral/Tricuspid interventions.
     
-    Abstracts: {text}
+    Focus on clinical implications (e.g., reintervention rates, mortality, and patient surveillance).
+    
+    CRITICAL: Provide clickable hyperlinks using Markdown: [Article Title](URL).
     """
 
     try:
-        # UPDATED: gemini-2.5-flash for 2026 stability
         response = client.models.generate_content(
             model="gemini-2.5-flash", 
-            contents=prompt
+            contents=search_query,
+            config=types.GenerateContentConfig(
+                tools=[types.Tool(google_search=types.GoogleSearch())],
+                temperature=0.0
+            )
         )
-        return response.text
+        return response.text if response.text.strip() else None
     except Exception as e:
-        print(f"Synthesis failed: {e}")
+        print(f"Generation error: {e}")
         return None
 
-def send_dnp_summary(report_content):
-    if not report_content:
+def send_valve_report(report_body):
+    """Sends the report only if content was generated."""
+    if not report_body:
+        print("No content found for this week. Skipping email.")
         return
 
     msg = EmailMessage()
-    msg['Subject'] = "DNP Research Agent: Literature Update"
-    # Mapping to your GitHub Secret names
-    msg['From'] = os.environ.get('MAIL_USERNAME')
-    msg['To'] = os.environ.get('MAIL_USERNAME')
-    
-    msg.set_content("Please use an HTML-compliant email client to view this report.")
-    msg.add_alternative(report_content, subtype='html')
+    msg['Subject'] = f"Weekly Valve & Structural Heart Update: {time.strftime('%Y-%m-%d')}"
+    msg['From'] = MY_EMAIL
+    msg['To'] = MY_EMAIL
+
+    html_content = report_body.replace('\n', '<br>')
+    msg.set_content(report_body)
+    msg.add_alternative(f"""
+    <html>
+      <body style="font-family: sans-serif; line-height: 1.6; color: #333;">
+        <h2 style="color: #0047AB;">Valve Research & Clinical Brief</h2>
+        <hr>
+        <div style="white-space: pre-wrap;">{html_content}</div>
+        <hr>
+        <p style="font-size: 0.8em; color: #777;">Automated Clinical Research Agent</p>
+      </body>
+    </html>
+    """, subtype='html')
 
     try:
         with smtplib.SMTP_SSL('smtp.gmail.com', 465) as smtp:
-            # Matches your GitHub Secret names
-            smtp.login(os.environ.get('MAIL_USERNAME'), os.environ.get('MAIL_PASSWORD'))
+            smtp.login(MY_EMAIL, EMAIL_PASS)
             smtp.send_message(msg)
-        print("DNP Research Email sent successfully!")
+        print("Valve Research Email sent successfully!")
     except Exception as e:
-        print(f"Email failed: {e}")
+        print(f"Email delivery failed: {e}")
 
 if __name__ == "__main__":
-    data = fetch_dnp_research()
-    report = generate_dnp_synthesis(data)
-    send_dnp_summary(report)
+    print("Fetching direct PubMed data...")
+    pubmed_text = fetch_pubmed_valves()
+    
+    print("Generating clinical synthesis...")
+    report = generate_valve_summary(pubmed_text)
+    
+    send_valve_report(report)
